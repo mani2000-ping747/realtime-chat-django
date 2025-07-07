@@ -1,9 +1,5 @@
 import json
 from channels.generic.websocket import AsyncWebsocketConsumer
-
-
-import json
-from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from .models import Message
 from django.contrib.auth import get_user_model
@@ -29,11 +25,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
-                    "type": "typing_status",
+                    "type": "typing_status",  # Match this with method name below
                     "typing": data["typing"],
                     "username": data["username"],
                 },
             )
+
         elif "message" in data:
             await self.save_message(data["username"], self.room_name, data["message"])
             await self.channel_layer.group_send(

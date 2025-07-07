@@ -42,7 +42,6 @@
     </style>
 </head>
 <body>
-    <p id="typing-status" class="text-muted fst-italic"></p>
 
     <button id="toggle-dark" class="btn btn-sm btn-dark float-end m-2">Toggle Dark Mode</button>
 
@@ -61,12 +60,12 @@
             {% endfor %}
         </div>
 
+        <p id="typing-status" class="text-muted fst-italic mt-2"></p>
+
         <div class="input-group">
             <input type="text" id="chat-message-input" class="form-control" placeholder="Type your message..." autocomplete="off">
             <button class="btn btn-primary" id="chat-message-submit">Send</button>
         </div>
-
-        <p id="typing-status" class="text-muted fst-italic mt-2"></p>
     </div>
 
     <script>
@@ -81,6 +80,7 @@
 
         chatSocket.onmessage = function(e) {
             const data = JSON.parse(e.data);
+
             if (data.message) {
                 const msgDiv = document.createElement('div');
                 msgDiv.className = 'd-flex ' + (data.username === userName ? 'justify-content-end' : 'justify-content-start');
@@ -92,6 +92,8 @@
                 msgDiv.appendChild(bubble);
                 chatLog.appendChild(msgDiv);
                 chatLog.scrollTop = chatLog.scrollHeight;
+
+                typingStatus.innerText = ''; // Clear typing status
             }
 
             if (data.typing && data.username !== userName) {
@@ -104,14 +106,15 @@
         };
 
         document.querySelector('#chat-message-submit').onclick = function () {
-            const messageInput = document.querySelector('#chat-message-input');
-            const message = messageInput.value.trim();
-            if (message) {
+            const messageInputDom = document.querySelector('#chat-message-input');
+            const message = messageInputDom.value;
+            if (message.trim() !== "") {
                 chatSocket.send(JSON.stringify({
                     'message': message,
                     'username': userName
                 }));
-                messageInput.value = '';
+                messageInputDom.value = '';
+                typingStatus.innerText = '';
             }
         };
 
