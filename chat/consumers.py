@@ -5,6 +5,7 @@ from .models import Message
 from django.contrib.auth import get_user_model
 
 User = get_user_model()
+online_users = {}
 
 
 class ChatConsumer(AsyncWebsocketConsumer):
@@ -25,7 +26,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
-                    "type": "typing_status",  # Match this with method name below
+                    "type": "typing_status",
                     "typing": data["typing"],
                     "username": data["username"],
                 },
@@ -41,6 +42,29 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     "username": data["username"],
                 },
             )
+
+        elif "file_url" in data:
+            await self.save_message(
+                data["username"], self.room_name, "", data["file_url"]
+            )
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    "type": "file_message",
+                    "file_url": data["file_url"],
+                    "username": data["username"],
+                },
+            )
+
+    async def file_message(self, event):
+        await self.send(
+            text_data=json.dumps(
+                {
+                    "file_url": event["file_url"],
+                    "username": event["username"],
+                }
+            )
+        )
 
     async def chat_message(self, event):
         await self.send(
@@ -62,7 +86,19 @@ class ChatConsumer(AsyncWebsocketConsumer):
             )
         )
 
+    async def online_users(self, event):
+        await self.send(
+            text_data=json.dumps(
+                {
+                    "users": event["users"],
+                }
+            )
+        )
+
     @database_sync_to_async
-    def save_message(self, username, room_name, message):
+    def save_message(self, username, room_name, message, file_url=None):
         user = User.objects.get(username=username)
-        return Message.objects.create(user=user, room_name=room_name, content=message)
+        msg = Message(user=user, room_name=room_name, content=message)
+        if file_url:
+            msg.file.name = file_url
+        msg.save()
