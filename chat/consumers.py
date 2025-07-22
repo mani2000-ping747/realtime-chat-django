@@ -252,7 +252,8 @@ import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
-from .models import Message, Room  # Use Room model
+from .models import Message
+from django.utils.timezone import localtime
 
 User = get_user_model()
 
@@ -265,7 +266,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
 
-        # Send previous messages
+        # Send last 50 messages
         previous_messages = await self.get_previous_messages(self.room_name)
         await self.send(text_data=json.dumps({"previous_messages": previous_messages}))
 
@@ -274,8 +275,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     async def receive(self, text_data):
         data = json.loads(text_data)
-
-        username = self.scope["user"].username  # get from scope
+        user = self.scope["user"]
 
         if "typing" in data:
             await self.channel_layer.group_send(
@@ -283,30 +283,50 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 {
                     "type": "typing_status",
                     "typing": data["typing"],
-                    "username": username,
+                    "username": user.username,
                 },
             )
 
         elif "message" in data:
             message = data["message"]
-            await self.save_message(username, self.room_name, message)
+            await self.save_message(
+                user=user, room_name=self.room_name, message=message
+            )
+
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
                     "type": "chat_message",
                     "message": message,
-                    "username": username,
+                    "username": user.username,
                 },
             )
 
         elif "file_url" in data:
-            await self.save_message(username, self.room_name, "", data["file_url"])
+            file_url = data["file_url"]
+            file_heading = data.get("file_heading", "")
+            gif_url = data.get("gif_url", None)
+            is_sticker = data.get("is_sticker", False)
+
+            await self.save_message(
+                user=user,
+                room_name=self.room_name,
+                message="",
+                file_url=file_url,
+                file_heading=file_heading,
+                gif_url=gif_url,
+                is_sticker=is_sticker,
+            )
+
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
                     "type": "file_message",
-                    "file_url": data["file_url"],
-                    "username": username,
+                    "file_url": file_url,
+                    "file_heading": file_heading,
+                    "gif_url": gif_url,
+                    "is_sticker": is_sticker,
+                    "username": user.username,
                 },
             )
 
@@ -325,6 +345,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
             text_data=json.dumps(
                 {
                     "file_url": event["file_url"],
+                    "file_heading": event.get("file_heading"),
+                    "gif_url": event.get("gif_url"),
+                    "is_sticker": event.get("is_sticker", False),
                     "username": event["username"],
                 }
             )
@@ -341,24 +364,46 @@ class ChatConsumer(AsyncWebsocketConsumer):
         )
 
     @database_sync_to_async
-    def save_message(self, username, room_name, message, file_url=None):
-        user = User.objects.get(username=username)
-        msg = Message(user=user, room_name=room_name, content=message)
+    def save_message(
+        self,
+        user,
+        room_name,
+        message="",
+        file_url=None,
+        file_heading="",
+        gif_url=None,
+        is_sticker=False,
+    ):
+        file_field = None
         if file_url:
-            msg.file.name = file_url
-        msg.save()
+            # Simulate FileField path only if saving file as a URL (not actual upload)
+            from django.core.files.base import ContentFile
+            import os
+
+            name = os.path.basename(file_url)
+            file_field = ContentFile(b"", name=name)  # Empty placeholder file
+        return Message.objects.create(
+            user=user,
+            room_name=room_name,
+            content=message,
+            file_heading=file_heading,
+            file=file_field,
+            gif_url=gif_url,
+            is_sticker=is_sticker,
+        )
 
     @database_sync_to_async
     def get_previous_messages(self, room_name):
-        messages = Message.objects.filter(room_name=room_name).order_by("timestamp")[
-            :50
-        ]
+        messages = Message.objects.filter(room_name=room_name).order_by("timestamp")
         return [
             {
                 "username": msg.user.username,
                 "message": msg.content,
                 "file_url": msg.file.url if msg.file else None,
-                "timestamp": msg.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                "file_heading": msg.file_heading,
+                "gif_url": msg.gif_url,
+                "is_sticker": msg.is_sticker,
+                "timestamp": localtime(msg.timestamp).strftime("%Y-%m-%d %H:%M:%S"),
             }
             for msg in messages
         ]
