@@ -90,3 +90,18 @@ def download_file(request, filename):
         )
     else:
         raise Http404(f"File not found: {filename}")
+
+
+@login_required
+def get_messages(request, room_name):
+    messages = Message.objects.filter(room_name=room_name).order_by("timestamp")
+    data = [
+        {
+            "username": msg.user.username,
+            "message": msg.content,
+            "file_url": msg.file.url if msg.file else "",
+            "timestamp": msg.timestamp.strftime("%H:%M"),
+        }
+        for msg in messages
+    ]
+    return JsonResponse(data, safe=False)

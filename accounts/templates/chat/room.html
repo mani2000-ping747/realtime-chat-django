@@ -7,7 +7,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@^1/index.js"></script>
-
     <style>
         html, body {
             height: 100%;
@@ -25,47 +24,88 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
 
-        .chat-container { flex-grow: 1; padding: 20px; overflow-y: auto; }
+        .chat-container {
+            flex-grow: 1;
+            padding: 30px 20px;
+            overflow-y: auto;
+        }
+
         .chat-box {
             background-color: white;
             border-radius: 20px;
-            padding: 20px;
-            max-width: 800px;
+            padding: 25px;
+            max-width: 900px;
             margin: 0 auto;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
         }
 
         .chat-history {
-            max-height: 400px;
+            max-height: 450px;
             overflow-y: auto;
             margin-bottom: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
         }
 
         .chat-message {
             max-width: 70%;
-            padding: 10px 15px;
+            padding: 15px 20px;
             border-radius: 20px;
-            margin: 5px 0;
             word-wrap: break-word;
+            font-size: 1rem;
         }
 
-        .self { align-self: flex-end; background-color: #198754; color: white; }
-        .other { align-self: flex-start; background-color: #0d6efd; color: white; }
-        .chat-input { display: flex; gap: 10px; align-items: center; }
+        .self {
+            align-self: flex-end;
+            background-color: #198754;
+            color: white;
+        }
+
+        .other {
+            align-self: flex-start;
+            background-color: #0d6efd;
+            color: white;
+        }
+
+        .chat-input {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            position: relative;
+            margin-top: 10px;
+        }
 
         .file-attach-btn {
-            background: none; border: none; font-size: 1.5rem;
-            cursor: pointer; color: #555;
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #555;
+            transition: color 0.3s;
         }
 
-        .file-attach-btn:hover { color: #000; }
-        .hidden-file { display: none; }
+        .file-attach-btn:hover {
+            color: #000;
+        }
 
-        .dark-mode { background-color: #121212; color: #f5f5f5; }
-        .dark-mode .chat-box, .dark-mode input, .dark-mode textarea {
-            background-color: #1e1e1e; color: #ffffff;
+        .hidden-file {
+            display: none;
+        }
+
+        .dark-mode {
+            background-color: #121212;
+            color: #f5f5f5;
+        }
+
+        .dark-mode .chat-box,
+        .dark-mode input,
+        .dark-mode textarea {
+            background-color: #1e1e1e;
+            color: #ffffff;
         }
 
         .dark-mode .chat-header {
@@ -92,14 +132,38 @@
             background: #000;
             color: #fff;
         }
-        #emoji-picker {
-        max-height: 300px;
-        width: 300px;
-        background: white;
-        border-radius: 10px;
-        box-shadow: 0 8px 16px rgba(0,0,0,0.2);
-        }   
 
+        #emoji-picker {
+            max-height: 300px;
+            width: 300px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+        }
+
+        #gif-modal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+            display: none;
+            z-index: 2000;
+        }
+
+        #gif-results img {
+            height: 100px;
+            margin: 5px;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+
+        #gif-results img:hover {
+            transform: scale(1.1);
+        }
     </style>
 </head>
 <body>
@@ -111,6 +175,11 @@
         <h4>Room: {{ room_name }}</h4>
         <button id="toggle-dark" class="dark-toggle">🌓 Toggle Theme</button>
     </div>
+
+    <div id="gif-modal" class="modal">
+        <input type="text" id="gif-search-input" placeholder="Search GIFs...">
+        <div id="gif-results"></div>
+      </div>
 
     <div class="container-fluid chat-container">
         <div class="chat-box">
@@ -132,7 +201,7 @@
             </div>
 <script>
     const roomName = "{{ room_name }}";
-    const userName = "{{ username }}";
+    const userName = "{{ request.user.username }}";
     const csrfToken = document.getElementById("csrf-token").value;
 
     const chatLog = document.querySelector('#chat-log');
@@ -160,6 +229,19 @@
 
     chatSocket.onmessage = function (e) {
         const data = JSON.parse(e.data);
+
+        if (data.previous_messages) {
+        data.previous_messages.forEach(msg => {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'chat-message ' + (msg.username === userName ? 'self align-self-end' : 'other align-self-start');
+            msgDiv.innerHTML = `
+                <strong>${msg.username}</strong><br>
+                ${msg.message ? msg.message : `<a href="${msg.file_url}" target="_blank">📎 Download file</a>`}
+                <br><small>${msg.timestamp}</small>`;
+            chatLog.appendChild(msgDiv);
+            });
+            chatLog.scrollTop = chatLog.scrollHeight;
+        }
 
         if (data.message) {
             const msgDiv = document.createElement('div');
@@ -234,6 +316,26 @@
         }
     };
 
+
+    document.getElementById('gif-search-input').addEventListener('input', function () {
+        const query = this.value;
+        fetch(`https://api.giphy.com/v1/gifs/search?api_key=YOUR_API_KEY&q=${query}&limit=10`)
+            .then(res => res.json())
+            .then(data => {
+                const results = document.getElementById('gif-results');
+                results.innerHTML = '';
+                data.data.forEach(gif => {
+                    const img = document.createElement('img');
+                    img.src = gif.images.fixed_height.url;
+                    img.onclick = () => {
+                        sendMessageWithGIF(img.src);
+                        document.getElementById('gif-modal').style.dispflay = 'none';
+                    };
+                    results.appendChild(img);
+                });
+            });
+    });
+
     document.querySelector('#chat-message-input').addEventListener('input', function () {
         chatSocket.send(JSON.stringify({
             'typing': true,
@@ -278,6 +380,17 @@
             console.error("File upload error:", err);
         }
     };
+    fetch(`/messages/${roomName}/`)
+    .then(response => response.json())
+    .then(messages => {
+        messages.forEach(data => {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'chat-message ' + (data.username === userName ? 'self align-self-end' : 'other align-self-start');
+            msgDiv.innerHTML = `<strong>${data.username}</strong><br>${data.message}<br><small>${data.timestamp}</small>`;
+            chatLog.appendChild(msgDiv);
+        });
+        chatLog.scrollTop = chatLog.scrollHeight;
+    });
 </script>
 
 </body>
