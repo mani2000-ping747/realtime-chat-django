@@ -11,6 +11,9 @@ class Message(models.Model):
     file = models.FileField(upload_to="chat_uploads/", null=True, blank=True)
     timestamp = models.DateTimeField(auto_now_add=True)
     gif_url = models.URLField(null=True, blank=True)
+    reply_to = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.SET_NULL
+    )
     is_sticker = models.BooleanField(default=False)
 
     def __str__(self):

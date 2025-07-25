@@ -289,8 +289,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         elif "message" in data:
             message = data["message"]
+            reply_to_id = data.get("reply_to")
+
             await self.save_message(
-                user=user, room_name=self.room_name, message=message
+                user=user,
+                room_name=self.room_name,
+                message=message,
+                reply_to_id=reply_to_id,
             )
 
             await self.channel_layer.group_send(
@@ -299,6 +304,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     "type": "chat_message",
                     "message": message,
                     "username": user.username,
+                    "reply_to": reply_to_id,
                 },
             )
 
@@ -363,6 +369,17 @@ class ChatConsumer(AsyncWebsocketConsumer):
             )
         )
 
+    async def chat_message(self, event):
+        await self.send(
+            text_data=json.dumps(
+                {
+                    "message": event["message"],
+                    "username": event["username"],
+                    "reply_to": event.get("reply_to"),
+                }
+            )
+        )
+
     @database_sync_to_async
     def save_message(
         self,
@@ -373,15 +390,23 @@ class ChatConsumer(AsyncWebsocketConsumer):
         file_heading="",
         gif_url=None,
         is_sticker=False,
+        reply_to_id=None,
     ):
+        reply_to = None
+        if reply_to_id:
+            try:
+                reply_to = Message.objects.get(id=reply_to_id)
+            except Message.DoesNotExist:
+                pass
+
         file_field = None
         if file_url:
-            # Simulate FileField path only if saving file as a URL (not actual upload)
             from django.core.files.base import ContentFile
             import os
 
             name = os.path.basename(file_url)
-            file_field = ContentFile(b"", name=name)  # Empty placeholder file
+            file_field = ContentFile(b"", name=name)
+
         return Message.objects.create(
             user=user,
             room_name=room_name,
@@ -390,19 +415,25 @@ class ChatConsumer(AsyncWebsocketConsumer):
             file=file_field,
             gif_url=gif_url,
             is_sticker=is_sticker,
+            reply_to=reply_to,
         )
 
     @database_sync_to_async
     def get_previous_messages(self, room_name):
-        messages = Message.objects.filter(room_name=room_name).order_by("timestamp")
+        messages = Message.objects.filter(room_name=room_name).order_by("-timestamp")[
+            :1000
+        ]
+        messages = reversed(messages)  # Chronological order
         return [
             {
+                "id": msg.id,
                 "username": msg.user.username,
                 "message": msg.content,
                 "file_url": msg.file.url if msg.file else None,
                 "file_heading": msg.file_heading,
                 "gif_url": msg.gif_url,
                 "is_sticker": msg.is_sticker,
+                "reply_to": msg.reply_to.content if msg.reply_to else None,
                 "timestamp": localtime(msg.timestamp).strftime("%Y-%m-%d %H:%M:%S"),
             }
             for msg in messages
